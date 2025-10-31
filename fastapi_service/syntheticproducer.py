@@ -1,54 +1,120 @@
-from fastapi import FastAPI
+"""
+Bu bir FastAPI servisidir və məqsədi verilən csv faylına uygun sintetik verilənlər
+yaratmaqdır və bunları SQLite veritabanına yazmaqdır.Servis publik və secure mode dəstəkləyir .
+Public modda sərbəst giriş olunur ,secure modda isə token bazlı giriş olunur
+"""
+
+import threading
+import time
+import os
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sdv.single_table import GaussianCopulaSynthesizer
 from sdv.metadata import SingleTableMetadata
 import pandas as pd
-import sqlite3
-import threading
-import time
+from dotenv import load_dotenv
+
+
+from database import create_tables
 
 app = FastAPI()
+load_dotenv()
 
-data = pd.read_csv('supermarket.csv')
-main_columns = ['Branch', 'City','Customer type', 'Gender', 'Product line', 'Unit price', 'Quantity', 'Payment']
+DATA_PATH = os.getenv("DATA_PATH")
+TOKEN = os.getenv("TOKEN")
+data = pd.read_csv(DATA_PATH)
+MAIN_COLUMNS = [
+    "Branch",
+    "City",
+    "Customer type",
+    "Gender",
+    "Product line",
+    "Unit price",
+    "Quantity",
+    "Payment",
+]
 
-metadata = SingleTableMetadata()
-for col in data.columns:
-    if data[col].dtype == 'object':
-        metadata.add_column(col, sdtype='categorical')
-    else:
-        metadata.add_column(col, sdtype='numerical')
 
-model = GaussianCopulaSynthesizer(metadata)
-model.fit(data)
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """
+    Authentifikasiya üçün token bazlı middleware .
+    Args:
+        request: FastAPI -in Request obyektini alır
+        call_next: FastAPI -ın middleware funksiyası
+    Returns:
+        FastAPI Response sorgusunu qaytarır
+    """
+    token = request.headers.get("Authorization")
+    if token != f"Bearer {TOKEN}":
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
-conn = sqlite3.connect('synthetic.db', check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS supermarket (
-    Invoice_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    Branch TEXT,
-    City TEXT,
-    Customer_type TEXT,
-    Gender TEXT,
-    Product_line TEXT,
-    Unit_price REAL,
-    Quantity INTEGER,
-    Payment TEXT
-)
-""")
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    process_time = time.perf_counter() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
 
-conn.commit()
+
+def generate_model():
+    """
+    Gaussian Copula Modeli yaratmaq üçün funksiya .
+
+    Returns:
+        Gaussian Copula Modeli
+    """
+    metadata = SingleTableMetadata()
+    for col in data.columns:
+        if data[col].dtype == "object":
+            metadata.add_column(col, sdtype="categorical")
+        else:
+            metadata.add_column(col, sdtype="numerical")
+    model = GaussianCopulaSynthesizer(metadata)
+    model.fit(data)
+    return model
+
 
 def generate_data():
+    """
+    Gaussian Copula Modelini sonsuz döngüdə yaradır .
+
+    Returns:
+        Gaussian Copula Modeli
+    """
     while True:
-        new_row = model.sample(1)[main_columns]
-        new_row.columns = [c.replace(" ", "_").replace("%", "pct") for c in new_row.columns]
-        new_row.to_sql('supermarket', conn, if_exists='append', index=False)
+        model = generate_model()
+        new_row = model.sample(1)[MAIN_COLUMNS]
+        new_row.columns = [
+            c.replace(" ", "_").replace("%", "pct") for c in new_row.columns
+        ]
+        new_row.to_sql("supermarket", conn, if_exists="append", index=False)
         time.sleep(1)
 
+
+conn = create_tables()
 threading.Thread(target=generate_data, daemon=True).start()
+
 
 @app.get("/latest")
 def latest_data():
+    """
+    Modelin generate etdiyi son verlənləri çıxardır.
+
+    Returns:
+        Son verilənlər
+    """
     df = pd.read_sql("SELECT * FROM supermarket ORDER BY Invoice_ID DESC LIMIT 1", conn)
+    return df.to_dict(orient="records")
+
+
+@app.get("/all")
+def all_data():
+    """
+    Modelin generate etdiyi bütün verlənləri çıxardır.
+
+    Returns:
+        Bütün verilənlər
+    """
+    df = pd.read_sql("SELECT * FROM supermarket", conn)
     return df.to_dict(orient="records")
