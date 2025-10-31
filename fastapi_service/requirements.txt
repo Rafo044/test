@@ -1,0 +1,5 @@
+
+pandas
+sdv
+fastapi
+uvicorn[standard]
