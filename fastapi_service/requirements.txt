@@ -1,4 +1,4 @@
 pandas
-sdv
+sdv[light]
 fastapi
 uvicorn[standard]
