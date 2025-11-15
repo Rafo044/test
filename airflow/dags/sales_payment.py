@@ -2,11 +2,12 @@
 
 from datetime import datetime
 
-from airflow.sdk import DAG, task
-from airflow.providers.standard.operators.bash import BashOperator
-from airflow.decorators import task_group
 import pandas as pd
-
+from airflow.decorators import task_group
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG, task
 from authentification import authenticate
 
 # =====================================================================
@@ -60,7 +61,7 @@ def clean_data(**context):
 # ====================================================================
 
 
-@task_group(group_id="load_data")
+@task_group(group_id="load_data", dag=sales_payment)
 def load_data_task():
     task2 = EmptyOperator(task_id="waiting_load_data")
     task3 = PythonOperator(
@@ -70,7 +71,10 @@ def load_data_task():
     task2 >> task3
 
 
-@task_group(group_id="read_data")
+@task_group(
+    group_id="read_data",
+    dag=sales_payment,
+)
 def read_data_task():
     task4 = EmptyOperator(task_id="waiting_read_data")
     task5 = PythonOperator(
@@ -80,7 +84,7 @@ def read_data_task():
     task4 >> task5
 
 
-@task_group(group_id="clean_data")
+@task_group(group_id="clean_data", dag=sales_payment)
 def clean_data_task():
     task6 = EmptyOperator(task_id="waiting_clean_data")
     task7 = PythonOperator(
