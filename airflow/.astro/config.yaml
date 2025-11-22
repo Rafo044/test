@@ -1,2 +1,4 @@
+postgres:
+    port: "5430"
 project:
     name: airflow

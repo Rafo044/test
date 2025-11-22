@@ -63,10 +63,9 @@ def clean_data(**context):
 
 @task_group(group_id="load_data", dag=sales_payment)
 def load_data_task():
-    task2 = EmptyOperator(task_id="waiting_load_data")
+    task2 = EmptyOperator(task_id="waiting_load_data", dag=sales_payment)
     task3 = PythonOperator(
-        task_id="load_data",
-        python_callable=load_data,
+        task_id="load_data", python_callable=load_data, dag=sales_payment
     )
     task2 >> task3
 
@@ -76,20 +75,18 @@ def load_data_task():
     dag=sales_payment,
 )
 def read_data_task():
-    task4 = EmptyOperator(task_id="waiting_read_data")
+    task4 = EmptyOperator(task_id="waiting_read_data", dag=sales_payment)
     task5 = PythonOperator(
-        task_id="read_data",
-        python_callable=read_data,
+        task_id="read_data", python_callable=read_data, dag=sales_payment
     )
     task4 >> task5
 
 
 @task_group(group_id="clean_data", dag=sales_payment)
 def clean_data_task():
-    task6 = EmptyOperator(task_id="waiting_clean_data")
+    task6 = EmptyOperator(task_id="waiting_clean_data", dag=sales_payment)
     task7 = PythonOperator(
-        task_id="clean_data",
-        python_callable=clean_data,
+        task_id="clean_data", python_callable=clean_data, dag=sales_payment
     )
     task6 >> task7
 
